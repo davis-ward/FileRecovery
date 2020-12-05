@@ -35,24 +35,25 @@ def main():
     with open(input_file, 'rb') as f:
         content = f.read()
     hexdump = (binascii.hexlify(content))
-    #hexdump = content
 
-    gifs = gif(hexdump)
+    pngs = png(hexdump)
     
+    gifs = gif(hexdump) 
     pngs = png(hexdump)
     pdfs = pdf(hexdump)
-    avis = avi(hexdump)
-    docs, zips = docx_and_zip(hexdump)
+    avis = avi(hexdump) 
+    docs, zips = docx_and_zip(hexdump)    
     jpgs = jpg(hexdump)
     bmps = bmp(hexdump)
-    
+       
     file_list =[]
 
+    
     superlist = [gifs, pngs, pdfs, avis, docs, zips, jpgs, bmps]
     file_count = 0
 
     name_list = ['gif', 'png', 'pdf', 'avi', 'docx', 'zip', 'jpg', 'bmp']
-
+    
     i = 0
     for c in superlist:
         for g in c:
@@ -64,19 +65,14 @@ def main():
 
 
     for f in file_list:
+        
         cmd = "dd if={} of={} bs=1 skip={} count={}".format(input_file, str(f[0]), str(f[1]), str(f[2]))
         #print(cmd)
 
         os.system(str(cmd))
     
-        
-        #print(str(f[0]))
-        #proc = subprocess.Popen('sha256sum file0.gif')
         stream = os.popen('sha256sum {}'.format(str(f[0])))
         hash = stream.read()
-        #proc = subprocess.Popen('sha256sum {}'.format(str(f[0])))
-        #hash = proc.stdout.read()
-        #hash = os.popen("sha256sum {}".format(f[0])).read()
 
         print(f[0])
         print("Offset: " + str(f[2]))
@@ -204,12 +200,11 @@ def docx_and_zip(hexdump):
         
         skip= False
         for d in docx_locations:
-            if (d[0]==offset or (d[0] < offset and offset < d[1])):
+            if (d[0]==offset or ((d[1]+d[0])==(size+offset))):
                 skip = True
-
-        if (not skip):
-            size = z.span()[1]/2 - z.span()[0]/2
-            zip_locations.append((offset, size))
+            if (not skip):
+                size = z.span()[1]/2 - z.span()[0]/2
+                zip_locations.append((offset, size))
             
 
     return docx_locations, zip_locations
