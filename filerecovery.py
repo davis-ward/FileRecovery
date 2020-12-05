@@ -3,23 +3,9 @@ import binascii
 import re
 import struct
 import sys
-
-
-# Command line args
-if (len(sys.argv) != 2):
-    print ("Please try again: python FileRecovery.py filename")
-    exit(1)
-
-filename = sys.argv[1]
-
-
-
-
-# This is broken on python3 for some reason. please use python
-with open(filename, 'rb') as f:
-    content = f.read()
-hexdump = (binascii.hexlify(content))
-
+import os
+from hashlib import sha256 
+import subprocess
 
 
 '''
@@ -34,26 +20,86 @@ bmp_regex = "424d.{8}0{8}.{33}1"
 docx_regex = "504b030414000600(.+?)504b0506"
 zip_regex= "504b0304(.{8}0[0-7]00(.+?)504b(.{34}000000))"
 
-def gif(): 
-    print("--- GIFs ---")
+
+
+def main():
+
+    # Command line args
+    if (len(sys.argv) != 2):
+        print ("Please try again: python FileRecovery.py filename")
+        exit(1)
+
+    input_file = sys.argv[1]
+
+    # This is broken on python3 for some reason. please use python
+    with open(input_file, 'rb') as f:
+        content = f.read()
+    hexdump = (binascii.hexlify(content))
+    #hexdump = content
+
+    gifs = gif(hexdump)
+    
+    pngs = png(hexdump)
+    pdfs = pdf(hexdump)
+    avis = avi(hexdump)
+    docs, zips = docx_and_zip(hexdump)
+    jpgs = jpg(hexdump)
+    bmps = bmp(hexdump)
+    
+    file_list =[]
+
+    superlist = [gifs, pngs, pdfs, avis, docs, zips, jpgs, bmps]
+    file_count = 0
+
+    name_list = ['gif', 'png', 'pdf', 'avi', 'docx', 'zip', 'jpg', 'bmp']
+
+    i = 0
+    for c in superlist:
+        for g in c:
+            file_name = 'file{}.{}'.format(file_count, name_list[i])
+            tuple = (file_name, g[0], g[1], g[0]+g[1])
+            file_list.append(tuple)
+            file_count += 1
+        i+=1
+
+
+    for f in file_list:
+        cmd = "dd if={} of={} bs=1 skip={} count={}".format(input_file, str(f[0]), str(f[1]), str(f[2]))
+        #print(cmd)
+
+        os.system(str(cmd))
+    
+        
+        #print(str(f[0]))
+        #proc = subprocess.Popen('sha256sum file0.gif')
+        stream = os.popen('sha256sum {}'.format(str(f[0])))
+        hash = stream.read()
+        #proc = subprocess.Popen('sha256sum {}'.format(str(f[0])))
+        #hash = proc.stdout.read()
+        #hash = os.popen("sha256sum {}".format(f[0])).read()
+
+        print(f[0])
+        print("Offset: " + str(f[2]))
+        print("Ending Offset: " + str(f[3]))
+        print("SHA256: " + hash)
+
+
+def gif(hexdump): 
+    
     gif_headers = re.finditer(gif_regex, hexdump)
     gif_locations = []
     for g in gif_headers:
         offset = g.span()[0]/2
         size = ((g.span()[1]-6)/2 - g.span()[0]/2)
         gif_locations.append((offset, size))
-        print("Offset: " + str(offset))
-        print("Size: " + str(size))
     return gif_locations
 
-def png():
-    print("--- PNGS ---")
+def png(hexdump):
+    
     png_headers = re.finditer(png_regex, hexdump)
     png_locations = []
     for element in png_headers:
         png_locations.append((element.span()[0]/2, element.span()[1]/2 - element.span()[0]/2))
-        print("offset: " + str(element.span()[0]/2))
-        print("count: " + str(element.span()[1]/2 - element.span()[0]/2))
     return png_locations
 
 '''
@@ -63,40 +109,36 @@ def png():
     that matches each header with the farthest away footer that
     still precedes the next header. 
 '''
-def pdf():
-    print("\n\n--- PDFS ---")
+def pdf(hexdump):
+    
 
     # Finds headers and footers and puts them in lists
     headiter = re.finditer(pdf_header, hexdump)
     footiter = re.finditer(pdf_footer, hexdump)
 
-    pdfHeaders = []
-    pdfFooters = []
+    pdf_headers = []
+    pdf_footers = []
     for element in headiter:
-        pdfHeaders.append(element.span()[0]/2)
+        pdf_headers.append(element.span()[0]/2)
 
     for element in footiter:
-        pdfFooters.append(element.span()[1]/2)
+        pdf_footers.append(element.span()[1]/2)
 
-    pdfLocations = []
-    for i in range(len(pdfHeaders)):
-        if i == len(pdfHeaders)-1:
-            temp = pdfFooters[len(pdfFooters)-1]
-            tuppdf = (pdfHeaders[i], temp)
-            pdfLocations.append(tuppdf)
+    pdf_locations = []
+    for i in range(len(pdf_headers)):
+        if i == len(pdf_headers)-1: # if we are on the last header, assign the last footer to it
+            temp = pdf_footers[len(pdf_footers)-1]
+            tuppdf = (pdf_headers[i], temp-pdf_headers[i])
+            pdf_locations.append(tuppdf)
             break
-        for j in range(len(pdfFooters)):
-            if pdfFooters[j] > pdfHeaders[i] and pdfFooters[j] < pdfHeaders[i+1]:
-                temp = pdfFooters[j]
-        tuppdf = (pdfHeaders[i], temp)
+        for j in range(len(pdf_footers)):
+            if pdf_footers[j] > pdf_headers[i] and pdf_footers[j] < pdf_headers[i+1]:
+                temp = pdf_footers[j]
+        tuppdf = (pdf_headers[i], temp-pdf_headers[i]+1)
 
-        pdfLocations.append(tuppdf)
-
-    # Print 
-    for element in pdfLocations:
-        print("offset : " + str(element[0]))
-        print("count : " + str(element[1] - element[0]))
-
+        pdf_locations.append(tuppdf)
+    
+    return pdf_locations
 '''
     AVI Strategy
 
@@ -104,43 +146,40 @@ def pdf():
     This loop finds the sizes of the files.
     Odd thing we found is that the size is short by 8 every time, so we add 8 manually. 
 '''
-def avi(): 
-    print("\n\n--- AVIS ---")
+def avi(hexdump): 
+    
 
     # Finds AVI Headers
     
-    aviHeaders = re.finditer(avi_regex, hexdump)
-    aviLocations = []
+    avi_headers = re.finditer(avi_regex, hexdump)
+    avi_locations = []
 
-    for element in aviHeaders:
+    for element in avi_headers:
         avioffset = element.span()[0]/2
         size = hexdump[element.span()[0]+8:element.span()[0]+16]
-        print("size in hex, before flipping order: " + str(size))
         avicount = struct.unpack("<i", unhexlify(size))[0] + 8
-        aviLocations.append((avioffset,avicount))
-        print ("offset: " + str(avioffset))
-        print ("size: " + str(avicount))
+        avi_locations.append((avioffset,avicount))
+        
+    
+    return avi_locations
 
-
-def bmp():
-    print("\n\n--- BMP ---")
+def bmp(hexdump):
 
     bmp = re.finditer(bmp_regex, hexdump)
-
+    bmp_locations = []
     for element in bmp:
         bmpoffset = element.span()[0]/2
-        print("offset: " + str(bmpoffset))
+        
         size = hexdump[element.span()[0]+4:element.span()[0]+12]
-        print(size)
         bmpcount = struct.unpack("<i", unhexlify(size))[0]
-        print("Size: " + str(bmpcount))
+        bmp_locations.append((bmpoffset, bmpcount))
+        
 
+    return bmp_locations
 '''
     zip and docx are extremely similar
 '''
-def docx_and_zip():
-
-    print("\n\n--- .Docx ---")
+def docx_and_zip(hexdump):
 
     docx_files = re.finditer(docx_regex, hexdump)
     docx_locations = []
@@ -149,55 +188,49 @@ def docx_and_zip():
         offset = d.span()[0]/2
         size = d.span()[1]/2 - d.span()[0]/2 + 18
         docx_locations.append((offset, size))
-        print('Offset: ' + str(offset))
-        print('size: ' + str(size))
 
 
-    print("\n\n--- ZIP ---")
 
     
     zip_files = re.finditer(zip_regex, hexdump)
     zip_locations = []
 
+    # This loop will check if any zip addresses match a previously found docx address. 
+    # Since the docx format is a more specific version of .zip, this should work.
     for z in zip_files:
         
         offset = z.span()[0]/2
         size = z.span()[1]/2 - z.span()[0]/2
-        zip_locations.append((offset, size))
-        print('Offset: ' + str(offset))
-        print('size: ' + str(size))
         
         skip= False
         for d in docx_locations:
-            if (d[0] ==  offset):
+            if (d[0]==offset or (d[0] < offset and offset < d[1])):
                 skip = True
 
         if (not skip):
             size = z.span()[1]/2 - z.span()[0]/2
             zip_locations.append((offset, size))
-            print('Offset: ' + str(offset))
-            print('size: ' + str(size))
-    # if (offset == docx_locations[i][j] for i,j in docx_locations):
-    #     break
+            
+
+    return docx_locations, zip_locations
     
 
-def jpg():
+def jpg(hexdump):
 
-    print("\n\n--- JPEG ---")
+    #print("\n\n--- JPEG ---")
 
     jpg_regex = "ffd8ffe(0|1|2|8)(.+?)ffd90"
-    jpg_regex = "ffd8ffe2"
     jpg_files = re.finditer(jpg_regex, hexdump)
     jpg_locations = []
 
 
     for j in jpg_files:
-        jpg_type = hexdump[j.span()[0]+7]
+        jpg_type = hexdump[j.span()[0]+7] # identifies the type of JPEG, e.g. JFIF, EXIF, etc
         offset = j.span()[0]/2
         size = j.span()[1]/2 - offset
         jpg_locations.append((offset, size, jpg_type))
-        print("Offset: " + str(offset))
-        print("Size: " + str(size))
+        
 
+    return jpg_locations
 
-pdf()
+main()
