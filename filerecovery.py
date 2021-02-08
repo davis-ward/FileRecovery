@@ -212,8 +212,6 @@ def docx_and_zip(hexdump):
 
 def jpg(hexdump):
 
-    #print("\n\n--- JPEG ---")
-
     jpg_regex = "ffd8ffe(0|1|2|8)(.+?)ffd90"
     jpg_files = re.finditer(jpg_regex, hexdump)
     jpg_locations = []
